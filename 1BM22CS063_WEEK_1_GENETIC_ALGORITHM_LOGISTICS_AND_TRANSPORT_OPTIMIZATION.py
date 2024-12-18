@@ -1,103 +1,113 @@
-import numpy as np
 import random
+import numpy as np
 
-# Genetic Algorithm Parameters
-population_size = 20
-generations = 100
+# Distance matrix representing distances between cities
+distance_matrix = [
+    [0, 2, 9, 10],
+    [1, 0, 6, 4],
+    [15, 7, 0, 8],
+    [6, 3, 12, 0]
+]
+
+# Parameters
+population_size = 10
 mutation_rate = 0.1
+crossover_rate = 0.8
+num_generations = 100
 
-# Functions for the Genetic Algorithm
-def calculate_route_cost(route, distance_matrix):
-    """Calculate total distance of a single route."""
-    cost = 0
+# Number of cities
+num_cities = len(distance_matrix)
+
+# Function to calculate the total distance of a route
+def calculate_fitness(route):
+    total_distance = 0
     for i in range(len(route) - 1):
-        cost += distance_matrix[route[i]][route[i + 1]]
-    return cost
+        total_distance += distance_matrix[route[i]][route[i + 1]]
+    # Add distance to return to the starting city
+    total_distance += distance_matrix[route[-1]][route[0]]
+    return 1 / total_distance  # Fitness is the inverse of the distance
 
-def calculate_total_cost(solution, distance_matrix):
-    """Calculate total cost of all routes in the solution."""
-    total_cost = 0
-    for route in solution:
-        total_cost += calculate_route_cost(route, distance_matrix)
-    return total_cost
-
-def generate_initial_population(customers, demands, vehicle_capacity):
-    """Generate an initial population of solutions."""
+# Generate a random initial population
+def generate_population(size, num_cities):
     population = []
-    for _ in range(population_size):
-        random.shuffle(customers)
-        solution = []
-        current_route = [0]  # Start at the depot
-        current_load = 0
-        for customer in customers:
-            if current_load + demands[customer] <= vehicle_capacity:
-                current_route.append(customer)
-                current_load += demands[customer]
-            else:
-                current_route.append(0)  # Return to depot
-                solution.append(current_route)
-                current_route = [0, customer]
-                current_load = demands[customer]
-        current_route.append(0)  # Return to depot for the last route
-        solution.append(current_route)
-        population.append(solution)
+    for _ in range(size):
+        individual = list(range(num_cities))
+        random.shuffle(individual)
+        population.append(individual)
     return population
 
+# Selection (Tournament Selection)
+def select_parents(population, fitnesses):
+    parents = []
+    for _ in range(len(population)):
+        tournament = random.sample(list(zip(population, fitnesses)), 3)
+        winner = max(tournament, key=lambda x: x[1])
+        parents.append(winner[0])
+    return parents
+
+# Crossover (Order Crossover)
 def crossover(parent1, parent2):
-    """Perform crossover between two parents."""
-    child = []
-    for route1, route2 in zip(parent1, parent2):
-        split_point = len(route1) // 2
-        new_route = route1[:split_point] + [x for x in route2 if x not in route1[:split_point]]
-        child.append(new_route)
-    return child
+    if random.random() < crossover_rate:
+        start, end = sorted(random.sample(range(len(parent1)), 2))
+        child = [-1] * len(parent1)
+        child[start:end] = parent1[start:end]
+        pointer = 0
+        for gene in parent2:
+            if gene not in child:
+                while child[pointer] != -1:
+                    pointer += 1
+                child[pointer] = gene
+        return child
+    return parent1
 
-def mutate(solution):
-    """Perform mutation on a solution."""
-    for route in solution:
-        if random.random() < mutation_rate:
-            idx1, idx2 = random.sample(range(1, len(route) - 1), 2)
-            route[idx1], route[idx2] = route[idx2], route[idx1]
+# Mutation (Swap Mutation)
+def mutate(individual):
+    if random.random() < mutation_rate:
+        i, j = random.sample(range(len(individual)), 2)
+        individual[i], individual[j] = individual[j], individual[i]
 
-def select_parents(population, distance_matrix):
-    """Select two parents using tournament selection."""
-    tournament_size = 5
-    selected = random.sample(population, tournament_size)
-    selected.sort(key=lambda sol: calculate_total_cost(sol, distance_matrix))
-    return selected[0], selected[1]
+# Main Genetic Algorithm
+def genetic_algorithm():
+    # Step 1: Initialize Population
+    population = generate_population(population_size, num_cities)
+    best_solution = None
+    best_fitness = -float('inf')
 
-# User Input
-print("Welcome to the Vehicle Routing Problem Solver!")
-num_locations = int(input("Enter the number of locations (including the depot): "))
-print(f"Provide the distance matrix for {num_locations} locations:")
+    for generation in range(num_generations):
+        # Step 2: Evaluate Fitness
+        fitnesses = [calculate_fitness(individual) for individual in population]
 
-distance_matrix = []
-for i in range(num_locations):
-    row = list(map(int, input(f"Row {i + 1}: ").split()))
-    distance_matrix.append(row)
+        # Track the best solution
+        max_fitness = max(fitnesses)
+        if max_fitness > best_fitness:
+            best_fitness = max_fitness
+            best_solution = population[fitnesses.index(max_fitness)]
 
-demands = list(map(int, input(f"Enter the demands for {num_locations - 1} customers (separated by spaces): ").split()))
-demands = [0] + demands  # Depot has no demand
+        # Step 3: Selection
+        parents = select_parents(population, fitnesses)
 
-num_vehicles = int(input("Enter the number of vehicles: "))
-vehicle_capacity = int(input("Enter the capacity of each vehicle: "))
+        # Step 4: Crossover and Mutation
+        next_generation = []
+        for i in range(0, len(parents), 2):
+            parent1 = parents[i]
+            parent2 = parents[(i + 1) % len(parents)]
+            child1 = crossover(parent1, parent2)
+            child2 = crossover(parent2, parent1)
+            mutate(child1)
+            mutate(child2)
+            next_generation.extend([child1, child2])
 
-# Run Genetic Algorithm
-customers = list(range(1, num_locations))  # Exclude depot
-population = generate_initial_population(customers, demands, vehicle_capacity)
+        # Update population
+        population = next_generation[:population_size]
 
-for generation in range(generations):
-    new_population = []
-    for _ in range(population_size):
-        parent1, parent2 = select_parents(population, distance_matrix)
-        child = crossover(parent1, parent2)
-        mutate(child)
-        new_population.append(child)
-    population = sorted(new_population, key=lambda sol: calculate_total_cost(sol, distance_matrix))[:population_size]
+        # Print the best fitness of each generation
+        print(f"Generation {generation + 1}: Best Fitness = {1 / best_fitness}")
 
-# Output Best Solution
-best_solution = population[0]
-print("\nOptimized Routes:")
-for i, route in enumerate(best_solution, start=1):
-    print(f"Vehicle {i}: {' -> '.join(map(str, route))}")
-print("Total Distance:", calculate_total_cost(best_solution, distance_matrix))
+    # Return the best solution and its distance
+    best_distance = 1 / best_fitness
+    return best_solution, best_distance
+
+# Run the Genetic Algorithm
+best_route, best_distance = genetic_algorithm()
+print("\nBest Route:", best_route)
+print("Best Distance:", best_distance)
